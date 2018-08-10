@@ -114,6 +114,10 @@ a {
 	color: rgb(45, 41, 38);
 }
 
+#noclick {
+	cursor: default
+}
+
 .hover_img_1 a { 
 	position:relative;
 }
