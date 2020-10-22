@@ -1,0 +1,22 @@
+{
+  "name": "felixycui.github.io",
+  "version": "1.0.0",
+  "description": "Personal site.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/felixycui/felixycui.github.io.git"
+  },
+  "author": "Felix Cui",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/felixycui/felixycui.github.io/issues"
+  },
+  "homepage": "https://github.com/felixycui/felixycui.github.io#readme",
+  "dependencies": {
+    "alea": "^1.0.0"
+  }
+}
