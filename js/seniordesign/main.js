@@ -17,6 +17,7 @@ var chunkSize, chunkHeight, world, voxelWorldMaterial;
 var numChunks;
 var heightmap = [[], []];
 const seed = 'seeds'; // arbitrary seed string
+var sky, newSun;
 
 // Voxel World Functions 
 
@@ -33,6 +34,9 @@ function createScene() {
 
   canvas = document.querySelector('#c');
   renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.5;
 
   // renderer.setSize( window.innerWidth, window.innerHeight );
   // sets renderer background color
@@ -96,6 +100,61 @@ function updateVoxelGeometry(x, y, z) {
   }  
 }
 
+function initSky() {
+  sky = new Sky();
+  sky.scale.setScalar(450000);
+  scene.add(sky);
+
+  newSun = new THREE.Vector3();
+
+  /// GUI
+
+  var effectController = {
+    turbidity: 10,
+    rayleigh: 3,
+    mieCoefficient: 0.005,
+    mieDirectionalG: 0.7,
+    // inclination: 0.49, // elevation / inclination
+    azimuth: 0.25, // Facing front,
+    exposure: renderer.toneMappingExposure
+  };
+
+  function guiChanged() {
+
+    var uniforms = sky.material.uniforms;
+    uniforms[ "turbidity" ].value = effectController.turbidity;
+    uniforms[ "rayleigh" ].value = effectController.rayleigh;
+    uniforms[ "mieCoefficient" ].value = effectController.mieCoefficient;
+    uniforms[ "mieDirectionalG" ].value = effectController.mieDirectionalG;
+
+    // var theta = Math.PI * ( effectController.inclination - 0.5 );
+    var phi = 2 * Math.PI * ( effectController.azimuth - 0.5 );
+
+    newSun.x = Math.cos( phi );
+    // newSun.y = Math.sin( phi ) * Math.sin( theta );
+    // newSun.z = Math.sin( phi ) * Math.cos( theta );
+
+    uniforms[ "sunPosition" ].value.copy( newSun );
+
+    renderer.toneMappingExposure = effectController.exposure;
+    requestRenderIfNotRequested();
+
+  }
+
+  const folder = gui.addFolder("Sun Variables")
+  folder.add( effectController, "turbidity", 0.0, 20.0, 0.1 ).onChange( guiChanged );
+  folder.add( effectController, "rayleigh", 0.0, 4, 0.001 ).onChange( guiChanged );
+  folder.add( effectController, "mieCoefficient", 0.0, 0.1, 0.001 ).onChange( guiChanged );
+  folder.add( effectController, "mieDirectionalG", 0.0, 1, 0.001 ).onChange( guiChanged );
+  // gui.add( effectController, "inclination", 0, 1, 0.0001 ).onChange( guiChanged );
+  // gui.add( effectController, "azimuth", 0, 1, 0.0001 ).onChange( guiChanged );
+  folder.add( effectController, "exposure", 0, 1, 0.0001 ).onChange( guiChanged );
+
+  guiChanged();
+
+
+}
+
 
 const chunkIdToMesh = {};
 
@@ -108,7 +167,7 @@ function updateChunkGeometry(x, y, z) {
   const geometry = mesh ? mesh.geometry : new THREE.BufferGeometry();
   const {positions, normals, uvs, indices} = world.genChunkGeometryData(cX, cY, cZ);
   
-  voxelWorldMaterial = new THREE.MeshLambertMaterial({
+  voxelWorldMaterial = new THREE.MeshStandardMaterial({
     map: texture,
     side: THREE.DoubleSide,
     alphaTest: 0.1,
@@ -188,7 +247,7 @@ function makeXYZGUI(gui, vector3, name, onChangeFunction) {
 
 // LIGHTS
 
-var ambientLight, directLight1, directLight2, hemiLight, helper, helper2;
+var ambientLight, directLight1, directLight2, hemiLight; //, helper, helper2;
 var sun = new SunController(60);
 
 function createLights() {
@@ -196,36 +255,24 @@ function createLights() {
   ambientLight = new THREE.AmbientLight ( 0xffffff, 0.2);
   scene.add( ambientLight );
 
-  // directLight1 = new THREE.DirectionalLight(0xFFFFFF, 0.9);
-  // directLight1.position.set(numChunks * chunkSize * .5, chunkHeight, -30);
-  // directLight1.target.position.set(numChunks * chunkSize * .5, chunkHeight * 1 / 3, numChunks * chunkSize * .5)
-  // scene.add(directLight1);
-  // scene.add(directLight1.target);
-
-  // directLight2 = new THREE.DirectionalLight(0xFFFFFF, 0.3);
-  // directLight2.position.set(numChunks * chunkSize * .5, -chunkHeight, numChunks * chunkSize * .5 + 30);
-  // directLight2.target.position.set(numChunks * chunkSize * .5, chunkHeight * 1 / 3, numChunks * chunkSize * .5)
-  // directLight2.position.set(1, -1, -2);
-  // scene.add(directLight2);
-
-  directLight1 = new THREE.DirectionalLight(0xFFFFFF, 1);
-  directLight1.position.set(-1, 2, 4);
+  directLight1 = new THREE.DirectionalLight(0xFFFFFF, 0.9);
+  directLight1.position.set(numChunks * chunkSize * .5, chunkHeight, -30);
+  directLight1.target.position.set(numChunks * chunkSize * .5, chunkHeight * 1 / 3, numChunks * chunkSize * .5)
+  directLight1.color.setHSL( 0.1, 0.7, 0.5 );
   scene.add(directLight1);
+  scene.add(directLight1.target);
 
-  directLight2 = new THREE.DirectionalLight(0xFFFFFF, 1);
+  directLight2 = new THREE.DirectionalLight(0xFFFFFF, 0.3);
+  directLight2.position.set(numChunks * chunkSize * .5, -chunkHeight, numChunks * chunkSize * .5 + 30);
+  directLight2.target.position.set(numChunks * chunkSize * .5, chunkHeight * 1 / 3, numChunks * chunkSize * .5)
   directLight2.position.set(1, -1, -2);
   scene.add(directLight2);
 
-  helper = new THREE.DirectionalLightHelper(directLight1);
-  scene.add(helper);
+  // helper = new THREE.DirectionalLightHelper(directLight1);
+  // scene.add(helper);
 
-  helper2 = new THREE.DirectionalLightHelper(directLight2);
-  scene.add(helper2);
-
-  // hemiLight = new THREE.HemisphereLight();
-  // hemiLight.intensity = 0.6;
-  // hemiLight.position.set(numChunks * chunkSize * .5, chunkHeight * 1.5, numChunks * chunkSize * .5)
-  // scene.add(hemiLight);
+  // helper2 = new THREE.DirectionalLightHelper(directLight2);
+  // scene.add(helper2);
 
   makeSunGUI(gui, sun, 'Sun Position', requestRenderIfNotRequested);
 }
@@ -498,19 +545,22 @@ function animate() {
   }
 
   let sunRadius = chunkSize * numChunks;
-  // directLight1.position.y = 180 * Math.sin(sun.degree * Math.PI / 180);
-  // directLight1.position.z = 180 * Math.cos(sun.degree * Math.PI / 180);
-  // directLight1.position.x = chunkSize * numChunks * .5;
-  // directLight2.position.y = -180 * Math.sin(sun.degree * Math.PI / 180);
-  // directLight2.position.z = -180 * Math.cos(sun.degree * Math.PI / 180);
-  // directLight2.position.x = chunkSize * numChunks * .5;
+  directLight1.position.y = sunRadius * Math.sin(sun.degree * Math.PI / 180) + chunkHeight * 1 / 3;
+  directLight1.position.z = sunRadius * Math.cos(sun.degree * Math.PI / 180) + numChunks * chunkSize / 2;
+  directLight1.position.x = chunkSize * numChunks * .5;
 
+  directLight2.position.y = -sunRadius * Math.sin(sun.degree * Math.PI / 180) + chunkHeight * 1 / 3;
+  directLight2.position.z = -sunRadius * Math.cos(sun.degree * Math.PI / 180) + numChunks * chunkSize / 2;
+  directLight2.position.x = chunkSize * numChunks * .5;
+
+  newSun.y = Math.sin(sun.degree * Math.PI / 180);
+  newSun.z = Math.cos(sun.degree * Math.PI / 180);
+  var uniforms = sky.material.uniforms;
+  uniforms[ "sunPosition" ].value.copy( newSun );
 
 
   directLight1.target.updateMatrixWorld();
-  helper.update();
   directLight2.target.updateMatrixWorld();
-  helper2.update();
 
   controls.update();
   renderer.render( scene, camera );
@@ -526,16 +576,10 @@ function requestRenderIfNotRequested() {
 function init() {
 
   createScene();
+  initSky();
+
   createLights();
   createVoxelWorld();
-
-  var geo = new THREE.CircleGeometry(180, 64);
-  var mat = new THREE.MeshBasicMaterial( {color: 0x000000} );
-  var circle = new THREE.Mesh(geo, mat);
-  circle.rotateY(Math.PI / 2);
-  circle.position.set(0, chunkHeight * 1 / 3, numChunks * chunkSize * .5);
-  scene.add(circle);
-
   animate();
 
   // need to add event listeners since we are only
