@@ -14,10 +14,15 @@ const gui = new dat.GUI();
 // WORLD VARS
 
 var chunkSize, chunkHeight, world, voxelWorldMaterial;
+var previousNumChunks; // this is necessary because i need to clear chunk geometry from previous load
 var numChunks;
 var heightmap = [[], []];
-const seed = 'seeds'; // arbitrary seed string
+var seed = 1234; // arbitrary seed string
 var sky, newSun;
+var erosion_iterations = 0
+var alpha = 55 // angle of repose in degrees; in this case we will just move dirt
+var voxelToPlace = 1 // voxel the player has selected
+
 
 // Voxel World Functions 
 
@@ -37,11 +42,6 @@ function createScene() {
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.5;
-
-  // renderer.setSize( window.innerWidth, window.innerHeight );
-  // sets renderer background color
-  // renderer.setClearColor("#222222");
-  // document.body.appendChild( renderer.domElement )
 
   controls = new THREE.OrbitControls( camera, renderer.domElement );
   controls.target.set(numChunks * chunkSize / 2, chunkHeight / 2, numChunks * chunkSize / 2);
@@ -114,12 +114,11 @@ function initSky() {
     rayleigh: 3,
     mieCoefficient: 0.005,
     mieDirectionalG: 0.7,
-    // inclination: 0.49, // elevation / inclination
     azimuth: 0.25, // Facing front,
     exposure: renderer.toneMappingExposure
   };
 
-  function guiChanged() {
+  function sunGuiChanged() {
 
     var uniforms = sky.material.uniforms;
     uniforms[ "turbidity" ].value = effectController.turbidity;
@@ -142,21 +141,17 @@ function initSky() {
   }
 
   const folder = gui.addFolder("Sun Variables")
-  folder.add( effectController, "turbidity", 0.0, 20.0, 0.1 ).onChange( guiChanged );
-  folder.add( effectController, "rayleigh", 0.0, 4, 0.001 ).onChange( guiChanged );
-  folder.add( effectController, "mieCoefficient", 0.0, 0.1, 0.001 ).onChange( guiChanged );
-  folder.add( effectController, "mieDirectionalG", 0.0, 1, 0.001 ).onChange( guiChanged );
-  // gui.add( effectController, "inclination", 0, 1, 0.0001 ).onChange( guiChanged );
-  // gui.add( effectController, "azimuth", 0, 1, 0.0001 ).onChange( guiChanged );
-  folder.add( effectController, "exposure", 0, 1, 0.0001 ).onChange( guiChanged );
+  folder.add( effectController, "turbidity", 0.0, 20.0, 0.1 ).onChange( sunGuiChanged );
+  folder.add( effectController, "rayleigh", 0.0, 4, 0.001 ).onChange( sunGuiChanged );
+  folder.add( effectController, "mieCoefficient", 0.0, 0.1, 0.001 ).onChange( sunGuiChanged );
+  folder.add( effectController, "mieDirectionalG", 0.0, 1, 0.001 ).onChange( sunGuiChanged );
+  
+  folder.add( effectController, "exposure", 0, 1, 0.0001 ).onChange( sunGuiChanged );
 
-  guiChanged();
-
-
+  sunGuiChanged();
 }
 
-
-const chunkIdToMesh = {};
+var chunkIdToMesh = {};
 
 function updateChunkGeometry(x, y, z) {
   const cX = Math.floor(x / chunkSize);
@@ -195,7 +190,7 @@ function updateChunkGeometry(x, y, z) {
   }
 }
 
-function placeVoxel(event) {
+function placeVoxel(event, voxelToPlace = 1) {
   const pos = getCanvasRelativePosition(event);
   const x = (pos.x / canvas.width ) *  2 - 1;
   const y = (pos.y / canvas.height) * -2 + 1;  // note we flip Y
@@ -208,7 +203,7 @@ function placeVoxel(event) {
 
   const intersection = world.intersectRay(start, end);  
   if (intersection) {
-    const voxelId = 1; // for now
+    const voxelId = voxelToPlace; // for now
     // the intersection point is on the face. That means
     // the math imprecision could put us on either side of the face.
     // so go half a normal into the voxel if removing (currentVoxel = 0)
@@ -220,6 +215,142 @@ function placeVoxel(event) {
     updateVoxelGeometry(...pos);
     requestRenderIfNotRequested();
   }
+}
+
+function getVoxelFromRaycast(event) {
+  // gets the voxel after ray trace if it exists
+  const pos = getCanvasRelativePosition(event);
+  const x = (pos.x / canvas.width ) *  2 - 1;
+  const y = (pos.y / canvas.height) * -2 + 1;  // note we flip Y
+ 
+  const start = new THREE.Vector3();
+  const end = new THREE.Vector3();
+  start.setFromMatrixPosition(camera.matrixWorld);
+  end.set(x, y, 1).unproject(camera);
+
+
+  const intersection = world.intersectRay(start, end);
+  if (intersection) {
+    return intersection.voxel // return the voxel if it exists
+  }
+
+  return 1
+}
+
+function placeTree(x, y, z) {
+  let logVoxel = 10; // log is voxel id of 10
+  let leafVoxel = 12;
+  let treeHeight = 2 + Math.floor(Math.random() * Math.floor(3));
+
+  // trunk
+  world.setVoxel(x, y - 2, z, logVoxel);
+  world.setVoxel(x, y - 1, z, logVoxel);
+  world.setVoxel(x, y, z, logVoxel);
+  world.setVoxel(x, y + 1, z, logVoxel);
+  world.setVoxel(x, y + 2, z, logVoxel);
+  world.setVoxel(x, y + 3, z, logVoxel);
+  world.setVoxel(x, y + 4, z, logVoxel);
+  world.setVoxel(x, y + 5, z, logVoxel);
+
+  //leaves
+  world.setVoxel(x - 1, y + treeHeight, z - 1, leafVoxel);
+  world.setVoxel(x - 1, y + treeHeight, z, leafVoxel);
+  world.setVoxel(x - 1, y + treeHeight, z + 1, leafVoxel);
+  world.setVoxel(x, y + treeHeight, z - 1, leafVoxel);
+  world.setVoxel(x, y + treeHeight, z + 1, leafVoxel);
+  world.setVoxel(x + 1, y + treeHeight, z - 1, leafVoxel);
+  world.setVoxel(x + 1, y + treeHeight, z, leafVoxel);
+  world.setVoxel(x + 1, y + treeHeight, z + 1, leafVoxel);
+
+
+  for (let i = treeHeight + 1; i < treeHeight + 4; i++) {
+    world.setVoxel(x - 1, y + i, z - 1, leafVoxel);
+    world.setVoxel(x - 1, y + i, z, leafVoxel);
+    world.setVoxel(x - 1, y + i, z + 1, leafVoxel);
+    world.setVoxel(x, y + i, z - 1, leafVoxel);
+    world.setVoxel(x, y + i, z + 1, leafVoxel);
+    world.setVoxel(x + 1, y + i, z - 1, leafVoxel);
+    world.setVoxel(x + 1, y + i, z, leafVoxel);
+    world.setVoxel(x + 1, y + i, z + 1, leafVoxel);
+    world.setVoxel(x - 2, y + i, z - 2, leafVoxel);
+    world.setVoxel(x - 2, y + i, z - 1, leafVoxel);
+    world.setVoxel(x - 2, y + i, z, leafVoxel);
+    world.setVoxel(x - 2, y + i, z + 1, leafVoxel);
+    world.setVoxel(x - 2, y + i, z + 2, leafVoxel);
+    world.setVoxel(x - 1, y + i, z - 2, leafVoxel);
+    world.setVoxel(x - 1, y + i, z - 1, leafVoxel);
+    world.setVoxel(x - 1, y + i, z, leafVoxel);
+    world.setVoxel(x - 1, y + i, z + 1, leafVoxel);
+    world.setVoxel(x - 1, y + i, z + 2, leafVoxel);
+    world.setVoxel(x, y + i, z - 2, leafVoxel);
+    world.setVoxel(x, y + i, z - 1, leafVoxel);
+    world.setVoxel(x, y + i, z + 1, leafVoxel);
+    world.setVoxel(x, y + i, z + 2, leafVoxel);
+    world.setVoxel(x + 1, y + i, z - 2, leafVoxel);
+    world.setVoxel(x + 1, y + i, z - 1, leafVoxel);
+    world.setVoxel(x + 1, y + i, z, leafVoxel);
+    world.setVoxel(x + 1, y + i, z + 1, leafVoxel);
+    world.setVoxel(x + 1, y + i, z + 2, leafVoxel);
+    world.setVoxel(x + 2, y + i, z - 2, leafVoxel);
+    world.setVoxel(x + 2, y + i, z - 1, leafVoxel);
+    world.setVoxel(x + 2, y + i, z, leafVoxel);
+    world.setVoxel(x + 2, y + i, z + 1, leafVoxel);
+    world.setVoxel(x + 2, y + i, z + 2, leafVoxel);
+  }
+
+  world.setVoxel(x - 2, y + treeHeight + 3, z - 2, 0);
+  world.setVoxel(x - 2, y + treeHeight + 3, z + 2, 0);
+  world.setVoxel(x + 2, y + treeHeight + 3, z + 2, 0);
+  world.setVoxel(x + 2, y + treeHeight + 3, z - 2, 0);
+  world.setVoxel(x, y + treeHeight + 2, z, leafVoxel);
+  world.setVoxel(x, y + treeHeight + 3, z, leafVoxel);
+  world.setVoxel(x, y + treeHeight + 4, z, leafVoxel);
+  world.setVoxel(x - 1, y + treeHeight + 4, z, leafVoxel);
+  world.setVoxel(x + 1, y + treeHeight + 4, z, leafVoxel);
+  world.setVoxel(x, y + treeHeight + 4, z + 1, leafVoxel);
+  world.setVoxel(x, y + treeHeight + 4, z - 1, leafVoxel);
+
+}
+
+const map = (val, smin, smax, emin, emax) => (emax-emin)*(val-smin)/(smax-smin) + emin
+const jitter = (geo,per) => geo.vertices.forEach(v => {
+    v.x += map(Math.random(),0,1,-per,per)
+    v.y += map(Math.random(),0,1,-per,per)
+    v.z += map(Math.random(),0,1,-per,per)
+})
+const chopBottom = (geo,bottom) => geo.vertices.forEach(v => v.y = Math.max(v.y,bottom))
+
+function makeCloud() {
+
+    const geo = new THREE.Geometry()
+
+    const tuft1 = new THREE.SphereGeometry(1.5,7,8)
+    tuft1.translate(-2,0,0)
+    geo.merge(tuft1)
+
+    const tuft2 = new THREE.SphereGeometry(1.5,7,8)
+    tuft2.translate(2,0,0)
+    geo.merge(tuft2)
+
+    const tuft3 = new THREE.SphereGeometry(2.0,7,8)
+    tuft3.translate(0,0,0)
+    geo.merge(tuft3)
+
+
+    jitter(geo,0.2)
+    chopBottom(geo,-0.5)
+    geo.computeFlatVertexNormals()
+    geo.scale(4, 4, 4);
+
+    return new THREE.Mesh(
+        geo,
+        new THREE.MeshLambertMaterial({
+            color:'white',
+            flatShading:true,
+            opacity: 0.75,
+            transparent: true
+        })
+    )
 }
 
 // GUI
@@ -234,7 +365,6 @@ class SunController {
 function makeSunGUI(gui, sun, name, onChangeFunction) {
   const folder = gui.addFolder(name);
   folder.add(sun, 'degree', 0, 359).onChange(onChangeFunction);
-  folder.open();
 }
 
 function makeXYZGUI(gui, vector3, name, onChangeFunction) {
@@ -243,6 +373,47 @@ function makeXYZGUI(gui, vector3, name, onChangeFunction) {
   folder.add(vector3, 'y', 0, 10).onChange(onChangeFunction);
   folder.add(vector3, 'z', -10, 10).onChange(onChangeFunction);
   folder.open();
+}
+
+const params = {
+  seed: "1234",
+  numErosionIterations: 0,
+  reposeAngle: 55,
+  numChunks: 6
+}
+
+function makeWorldParamGUI() {
+  const folder = gui.addFolder("World Params");
+  folder.add(params, "seed").onFinishChange(function (value) {
+    seed = value;
+  });
+
+  folder.add(params, "numChunks").onFinishChange(function (value) {
+    previousNumChunks = numChunks;
+    numChunks = value;
+  });
+
+  folder.add(params, "numErosionIterations").onFinishChange(function (value) {
+    erosion_iterations = value;
+  });
+
+  folder.add(params, "reposeAngle").onFinishChange(function (value) {
+    alpha = value;
+  });
+}
+
+function makeReloadGUI() {
+  var obj = { Reload:function(){ 
+      reloadLevel()
+    }};
+  gui.add(obj, 'Reload');
+}
+
+function makeErodeGUI() {
+  var obj = { Erode:function(){ 
+      erodeOneIteration()
+    }};
+  gui.add(obj, 'Erode');
 }
 
 // LIGHTS
@@ -348,6 +519,82 @@ function moveMaterial(amount, i, j, i2, j2, voxelType) {
   heightmap[i2][j2] = h_nbr + amount;
 }
 
+function erodeOneIteration() {
+  // thermal erosion sim
+  let tan_alpha = Math.tan(alpha * Math.PI / 180);
+  
+  for (let i = 0; i < heightmap[0].length; ++i) {
+    for (let j = 0; j < heightmap.length; ++j) {
+      if (typeof heightmap[i - 1] !== 'undefined') {
+        var h00 = heightmap[i - 1][j - 1];
+        var h10 = heightmap[i - 1][j];
+        var h20 = heightmap[i - 1][j + 1];
+      }
+      
+      if (typeof heightmap[i] !== 'undefined') {
+        var h01 = heightmap[i][j - 1];
+        var h11 = heightmap[i][j];
+        var h21 = heightmap[i][j + 1];
+      }
+
+      if (typeof heightmap[i + 1] !== 'undefined') {
+        var h02 = heightmap[i + 1][j - 1];
+        var h12 = heightmap[i + 1][j];
+        var h22 = heightmap[i + 1][j + 1];
+      }
+      
+      let neighbors = [h00, h01, h02, h10, h12, h20, h21, h22];
+      let diff_max = 0;
+      let diff_total = 0;
+      let willMove = false;
+
+      function helper(e) {
+        if (typeof e == 'undefined') { return; }
+        let d = h11 - e;
+        if (d > tan_alpha) {
+          willMove = true;
+          if (d > diff_max) {
+            diff_max = d;
+          }
+
+          diff_total += d;
+        }
+      }
+
+      neighbors.forEach(element => helper(element));
+      if (willMove) {
+        for (let i2 = i - 1; i2 <= i + 1; ++i2) {
+          for (let j2 = j - 1; j2 <= j + 1; ++j2) {
+            if (i2 == i && j2 == j) { continue; }
+
+            if (i2 < 0 || i2 >= heightmap.length || j2 < 0 || j2 >= heightmap[0].length) {
+              continue;
+            }
+
+            let d = h11 - heightmap[i2][j2]
+            if (d <= tan_alpha) { continue; }
+
+            let amount = (diff_max - tan_alpha) * d / diff_total;
+            let voxelType = 15;
+            moveMaterial(amount, i, j, i2, j2, voxelType);
+          }
+        }
+      }
+    }
+  }
+
+  // need to update the chunk geometry for each chunk
+  // i'm just choosing an arbitrary voxel to call updateVoxelGeometry on,
+  // which in turn calls updateChunkGeometry
+  for (let i = 0; i < numChunks; ++i) {
+    for (let j = 0; j < numChunks; ++j) {
+      updateVoxelGeometry(chunkSize * i + 1, chunkHeight / 2, chunkSize * j + 1);
+    }
+  }
+
+  requestRenderIfNotRequested();
+}
+
 function createVoxelWorld() {
   const tileSize = 16;
   const tileTextureWidth = 16 * tileSize;
@@ -355,7 +602,7 @@ function createVoxelWorld() {
   world = new VoxelWorld({chunkSize, chunkHeight, tileSize,
     tileTextureWidth, tileTextureHeight,});
 
-  noise.seed(1234);
+  noise.seed(seed);
 
   //This is where the world gen will happen.  
   for (let y = 0; y < chunkHeight; ++y) {
@@ -407,28 +654,6 @@ function createVoxelWorld() {
         }
 
         world.setVoxel(x, y, z, voxelValue);
-
-        // old gen code
-        // if (y == height) {
-        //   world.setVoxel(x, height, z, 14);
-        // }
-        // else if (y < height && y > 30) {
-        //   world.setVoxel(x, y, z, 15);
-        // }
-        // else if (y <= 30 && y < height - 1) {
-        //   world.setVoxel(x, y, z, 3);
-        // }
-
-        // const height = (Math.sin(x / (numChunks * chunkSize) * Math.PI * 2) + Math.sin(z / (numChunks * chunkSize) * Math.PI * 3)) * (chunkSize / 6) + (chunkSize / 2);
-        // if (y < height + 64 && y >= height + 63) {
-        //   world.setVoxel(x, y, z, 14);
-        // }
-        // else if (y < height + 63 && y > 30) {
-        //   world.setVoxel(x, y, z, 15);
-        // }
-        // else if (y <= 30) {
-        //   world.setVoxel(x, y, z, 3);
-        // }
       }
     }
   }
@@ -436,10 +661,9 @@ function createVoxelWorld() {
   console.log("done!");
 
   // thermal erosion sim
-  let alpha = 55 // angle of repose in degrees; in this case we will just move dirt
   let tan_alpha = Math.tan(alpha * Math.PI / 180);
 
-  for (let pass = 0; pass < 4; ++pass) {
+  for (let pass = 0; pass < erosion_iterations; ++pass) {
     for (let i = 0; i < heightmap[0].length; ++i) {
       for (let j = 0; j < heightmap.length; ++j) {
         if (typeof heightmap[i - 1] !== 'undefined') {
@@ -501,15 +725,42 @@ function createVoxelWorld() {
     }
   }
 
-  // one more iteration to convert dirt blocks to grass
-  // for (let i = 0; i < heightmap[0].length; ++i) {
-  //   for (let j = 0; j < heightmap.length; ++j) {
-  //     let h = heightmap[i][j];
-  //     if (world.getVoxel(i, h, j) == 15) {
-  //       world.setVoxel(i, h, j, 14);
-  //     }
-  //   }
-  // }
+  
+  // Plant Trees
+  for (let horX = 0; horX < numChunks * chunkSize; horX += 5) {
+    for (let horZ = 0; horZ < numChunks * chunkSize; horZ += 5) {
+      let sample = noise1(horX, horZ);
+      if (sample > 0.5) {
+        continue;
+      }
+
+      let treeX = horX + Math.floor(Math.random() * Math.floor(3));
+      let treeZ = horZ + Math.floor(Math.random() * Math.floor(3));
+
+      if (treeX < 0) { treeX = 1; }
+      if (treeX >= numChunks * chunkSize) { treeX = numChunks * chunkSize - 1; }
+      if (treeZ < 0) { treeZ = 1; }
+      if (treeZ >= numChunks * chunkSize) { treeZ = numChunks * chunkSize - 1; }
+
+      // first, check bounding box around area we want to plant tree in
+      // by making sure there are air blocks in a certain radius around the 
+      // tree center
+      let treeY = heightmap[treeX][treeZ];
+
+      if (world.getVoxel(treeX - 4, treeY + 5, treeZ) == 0 &&
+        world.getVoxel(treeX + 4, treeY + 5, treeZ) == 0 &&
+        world.getVoxel(treeX, treeY + 5, treeZ + 4) == 0 &&
+        world.getVoxel(treeX, treeY + 5, treeZ - 4) == 0 &&
+        world.getVoxel(treeX - 4, treeY + 5, treeZ - 4) == 0 &&
+        world.getVoxel(treeX + 4, treeY + 5, treeZ - 4) == 0 &&
+        world.getVoxel(treeX - 4, treeY + 5, treeZ + 4) == 0 &&
+        world.getVoxel(treeX + 4, treeY + 5, treeZ + 4) == 0) {
+        // then, plant it if legal
+        placeTree(treeX, treeY, treeZ);
+      }
+    }
+  }
+
   console.log("done2!");
 
   // need to update the chunk geometry for each chunk
@@ -518,6 +769,34 @@ function createVoxelWorld() {
   for (let i = 0; i < numChunks; ++i) {
     for (let j = 0; j < numChunks; ++j) {
       updateVoxelGeometry(chunkSize * i + 1, chunkHeight / 2, chunkSize * j + 1);
+    }
+  }
+
+  // add clouds
+
+  let cloudHeight = 110;
+
+  for (let horX = 0; horX < numChunks * chunkSize; horX += 10) {
+    for (let horZ = 0; horZ < numChunks * chunkSize; horZ += 10) {
+      let sample = noise1(horX, horZ);
+      if (sample > .2) {
+        continue
+      }
+
+      let cloudX = horX + Math.floor(Math.random() * Math.floor(3));
+      let cloudZ = horZ + Math.floor(Math.random() * Math.floor(3));
+
+      if (cloudX < 0) { treeX = 1; }
+      if (cloudX >= numChunks * chunkSize) { cloudX = numChunks * chunkSize - 1; }
+      if (cloudZ < 0) { treeZ = 1; }
+      if (cloudZ >= numChunks * chunkSize) { cloudZ = numChunks * chunkSize - 1; }
+
+      let cloud = makeCloud();
+      cloud.position.x = cloudX;
+      cloud.position.z = cloudZ;
+      cloud.position.y = cloudHeight + Math.floor(Math.random() * Math.floor(8)) - 4;
+
+      scene.add(cloud);
     }
   }
 }
@@ -573,12 +852,31 @@ function requestRenderIfNotRequested() {
   }
 }
 
+function reloadLevel() {
+  heightmap = [[], []];
+  createVoxelWorld()
+  for (let i = 0; i < previousNumChunks; ++i) {
+    for (let j = 0; j < previousNumChunks; ++j) {
+      updateVoxelGeometry(chunkSize * i + 1, chunkHeight / 2, chunkSize * j + 1);
+    }
+  }
+  controls.target.set(numChunks * chunkSize / 2, chunkHeight / 2, numChunks * chunkSize / 2);  
+  camera.position.set(
+    -chunkSize * .3, chunkHeight * .8, -chunkSize * .3
+  );
+  controls.update()
+  animate()
+}
+
 function init() {
 
   createScene();
   initSky();
-
   createLights();
+  makeWorldParamGUI();
+  makeErodeGUI();
+  makeReloadGUI();
+
   createVoxelWorld();
   animate();
 
@@ -638,9 +936,22 @@ function recordMovement(event) {
   mouse.moveY += Math.abs(mouse.y - event.clientY);
 }
 function placeVoxelIfNoMovement(event) {
-  if (mouse.moveX < 5 && mouse.moveY < 5) {
-    placeVoxel(event);
+  if (event.which == 2 || event.button == 4) {
+    if (mouse.moveX < 5 && mouse.moveY < 5) {
+      voxelToPlace = getVoxelFromRaycast(event);
+    }
   }
+  else if (event.wich == 3 || event.button == 2) {
+    if (mouse.moveX < 5 && mouse.moveY < 5) {
+      placeVoxel(event, voxelToPlace);
+    }
+  }
+  else {
+    if (mouse.moveX < 5 && mouse.moveY < 5) {
+      placeVoxel(event, 0); // delete block
+    }
+  }
+  
   window.removeEventListener('mousemove', recordMovement);
   window.removeEventListener('mouseup', placeVoxelIfNoMovement);
 }
