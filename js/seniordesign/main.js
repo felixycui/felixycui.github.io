@@ -33,9 +33,7 @@ function createScene() {
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color('lightblue');
-  // scene.fog = new THREE.Fog(0xf7d9aa, 100, 950);
   camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
-  // renderer = new THREE.WebGLRenderer({ antialias: true});
 
   canvas = document.querySelector('#c');
   renderer = new THREE.WebGLRenderer({canvas, antialias: true});
@@ -58,7 +56,6 @@ function createScene() {
 
   // load texture
   const loader = new THREE.TextureLoader();
-  // texture = loader.load('resources/sample_tex.png', animate);
   texture = loader.load('https://threejsfundamentals.org/threejs/resources/images/minecraft/flourish-cc-by-nc-sa.png', animate);
 
   texture.magFilter = THREE.NearestFilter;
@@ -126,12 +123,9 @@ function initSky() {
     uniforms[ "mieCoefficient" ].value = effectController.mieCoefficient;
     uniforms[ "mieDirectionalG" ].value = effectController.mieDirectionalG;
 
-    // var theta = Math.PI * ( effectController.inclination - 0.5 );
     var phi = 2 * Math.PI * ( effectController.azimuth - 0.5 );
 
     newSun.x = Math.cos( phi );
-    // newSun.y = Math.sin( phi ) * Math.sin( theta );
-    // newSun.z = Math.sin( phi ) * Math.cos( theta );
 
     uniforms[ "sunPosition" ].value.copy( newSun );
 
@@ -459,7 +453,6 @@ TestCube = function(){
 
 function createTestObjects() {
   tcube = new TestCube();
-  // tcube.mesh.position.y = -1;
   scene.add(tcube.mesh);
 }
 
@@ -494,8 +487,6 @@ function noise3(x, z) {
 }
 
 function moveMaterial(amount, i, j, i2, j2, voxelType) {
-  // TODO: only move the material specified in the voxelType. That is,
-  // remove only voxelType blocks and don't remove non-voxelType voxels.
   amount = Math.floor(amount);
   if (amount == 0) { return; }
   let h_center = heightmap[i][j];
@@ -611,9 +602,6 @@ function createVoxelWorld() {
 
       for (let z = 0; z < numChunks * chunkSize; ++z) {
         let nx = x / (numChunks * chunkSize) - 0.5, ny = y / chunkHeight - 0.5, nz = z / (numChunks * chunkSize);
-        // const height = Math.floor((
-        //   noise1(nx, nz) + .5 * noise1(2 * nx, 2 * ny) + .25 * noise1(4 * nx, 4 * ny)
-        //   ) * chunkHeight) - 20;
 
         let height = Math.floor(
           noise.perlin2(nx, nz) + 
@@ -621,7 +609,6 @@ function createVoxelWorld() {
             + .125 * noise.perlin2(8 * nx, 8 * nz))
          * chunkHeight) + 30;
 
-        // height = Math.floor(Math.pow(height, 1.05));
         if (height <= 5) {
           height = 5 - Math.floor(.5 * noise4(2 * nx, 2 * nz) * 5);
         }
@@ -657,8 +644,6 @@ function createVoxelWorld() {
       }
     }
   }
-
-  console.log("done!");
 
   // thermal erosion sim
   let tan_alpha = Math.tan(alpha * Math.PI / 180);
@@ -760,8 +745,6 @@ function createVoxelWorld() {
       }
     }
   }
-
-  console.log("done2!");
 
   // need to update the chunk geometry for each chunk
   // i'm just choosing an arbitrary voxel to call updateVoxelGeometry on,
@@ -868,6 +851,7 @@ function reloadLevel() {
   animate()
 }
 
+// this is our main function
 function init() {
 
   createScene();
